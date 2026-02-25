@@ -1,5 +1,6 @@
 data
-job_commands/
-results/
+plots
+job_commands
+results
 notebooks/tmp_*
 .ipynb_checkpoints

@@ -3,4 +3,5 @@ plots
 job_commands
 results
 notebooks/tmp_*
+notebooks/busco_*
 .ipynb_checkpoints

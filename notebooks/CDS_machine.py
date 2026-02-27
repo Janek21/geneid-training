@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 
 
 def CDS_read(filepath):
@@ -64,8 +65,8 @@ def hierarchy_setter(df):
 
 
 
-def cds_completor(inFile, outFile):
-    
+def CDS_2_gffcomp(inFile, outFile):
+    """Takes a CDS only gff file and an output path as an input, and converts the CDS file to gff-comparable"""
     #read file to pandas
     cds_data=CDS_read(inFile)
 
@@ -78,12 +79,16 @@ def cds_completor(inFile, outFile):
     #set cds>exon>gene hierarchy
     hdata=hierarchy_setter(exoned_data)
 
+    #create folders if they dont exist and write file
+    outFolder=outFile[:outFile.rfind("/")]
+    os.makedirs(outFolder, exist_ok=True)
     hdata.to_csv(outFile, sep="\t", index=None, header=None)
 
 
 def main():
     #cds_file="../data/species/Plasmodium_vivax/CDS_Pvivax_ann.gff"
     cds_file="/home/jj/Desktop/Data_science/CRG/TFM/projects/geneid-training/data/species/Drosophila_melanogaster/CDS_Dmelanogaster_ann.gff"
-    cds_completor(cds_file, "../results/file.gff")
+    outPath="../data/"
+    CDS_2_gffcomp(cds_file, "../results/file.gff")
 
-main()
+#main()

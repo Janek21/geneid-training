@@ -5,3 +5,4 @@ results
 notebooks/tmp_*
 notebooks/busco_*
 .ipynb_checkpoints
+notebooks/.Rhistory

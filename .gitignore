@@ -1,8 +1,12 @@
-data
+training_data/geneidTrainer
+training_data/*sif
+training_data/species
 plots
 job_commands
-results
-notebooks/tmp_*
-notebooks/busco_*
+results/busco
+results/specie_logs
+results/pred
+results/gffcmp
+results/backupParam.zip
 .ipynb_checkpoints
-notebooks/.Rhistory
+results.zip

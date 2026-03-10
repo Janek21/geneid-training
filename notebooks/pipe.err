@@ -1,6 +1,0 @@
-GeneID training: 
-		Eisenia_fetida;re-run pipeline making sure you have at least 400 sequences to train geneid with #check files>error in gff/fasta files > get new ones??(silvia)
-
-GeneID prediction: 
-		Mytilus_galloprovincialis_GIT; Error: Wrong format: NO_SCORE value scores (number/type) #wrong format in git file, run $dos2unix <filepath> or $sed -i 's/\r$//' <filepath>
-		Brachionus_asplanchnoidis_OWN: Error: Too many terminal exons: decrease RTERMI parameter #change in program files (in main /include/geneid.h, chsnge RTERMI to 3?)

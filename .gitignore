@@ -8,4 +8,6 @@ results/specie_logs
 results/pred
 results/gffcmp
 results/backupParam.zip
+.vscode
+__pycache__
 .ipynb_checkpoints

@@ -17,7 +17,7 @@ fi
 
 # Determine if the input file is gzipped
 if [[ "$input_fasta" == *.gz ]]; then
-    # Process gzipped file
+    # Process gzipped file, result file is uncompressed
     gunzip -c "$input_fasta" | awk '/^>/ {print $1; next} {print}' 
 else
     # Process plain file

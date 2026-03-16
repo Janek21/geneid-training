@@ -1,5 +1,5 @@
 # geneid-trainer
-You will need the raw species data in ../data/species
+You will need the raw species data in ../data/species/<Specie identifier>/GCA*/
 
 You can download a github repository to compare your parameter results if needed
 `

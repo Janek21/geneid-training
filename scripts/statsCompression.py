@@ -106,7 +106,7 @@ def main():
     output_file=args.output
     df.to_csv(output_file, index=False, sep="\t")
     
-    print(f"\nSuccess! Compiled metrics into {output_file} using Pandas.")
+    print(f"\nSuccess! Compiled metrics of {len(args.input)} stat files into {output_file} using Pandas.")
 
 if __name__ == "__main__":
     main()

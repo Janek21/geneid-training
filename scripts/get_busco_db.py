@@ -90,7 +90,7 @@ def main():
         busco_lineage_output=species2lineage(args.species_name, args.email, args.busco_lineage_database, args.odb_version)
 
     elif args.taxon_id:
-        busco_lineage_output=species2lineage(args.taxon_id, args.email, args.busco_lineage_database, args.odb_version)
+        busco_lineage_output=taxon2lineage(args.taxon_id, args.email, args.busco_lineage_database, args.odb_version)
 
     print(busco_lineage_output)
 

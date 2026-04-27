@@ -3,11 +3,7 @@ training_data/*sif
 training_data/species
 plots
 job_commands
-results/busco
-results/specie_logs
-results/pred
-results/gffcmp
-results/backupParam.zip
+results
 .vscode
 __pycache__
 .ipynb_checkpoints

@@ -1,5 +1,5 @@
 # geneid-trainer
-You will need the raw species data in ../data/species/[Specie identifier]/GCA*/
+You will need the raw species data in ../data/species/[Specie identifier]/GC[AF]*/
 
 The program assumes that the genome and annotation present matching indexes, and that both are present in the folder path.
 

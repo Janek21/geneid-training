@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 import time
 import random
@@ -17,11 +19,12 @@ def get_taxonomy(taxon_id, query_email):
     Entrez.local_cache = cache_dir
     Entrez.email = query_email 
     
-    #slight random delay to not hit all requests at the same time
-    r_delay=random.uniform(5,15)
+    #slight random delay to avoid bursts when many jobs run in parallel.
+    #with an API key NCBI allows 10 req/s (vs 3 anonymous), so we can wait less.
+    r_delay = random.uniform(0.1, 0.5) if Entrez.api_key else random.uniform(1, 5)
     time.sleep(r_delay)
     #retry loop
-    for attept in range(5):
+    for attempt in range(5):
         try:
             handle = Entrez.efetch(db="taxonomy", id=taxon_id, retmode="xml")
             records = Entrez.read(handle, validate=False)
@@ -31,7 +34,7 @@ def get_taxonomy(taxon_id, query_email):
         #catch error
         except HTTPError as e:
             if e.code==429: #overload ncbi error
-                timeWait=(2*attempt)+random.uniform(1,5)#timeout slightly random
+                timeWait=(2*attempt)+random.uniform(1,3)#timeout slightly random
                 print(f"NCBI rate limit hit. Task sleeping for {timeWait}s")
                 time.sleep(timeWait)
 
@@ -91,6 +94,9 @@ def taxon2lineage(taxon_id, query_email, busco_database, odb_version):
 def main():
     parser = argparse.ArgumentParser(description='Fetch protein sequences from NCBI for a given taxon ID.')
     parser.add_argument("-e", '--email', type=str, required=True, help='Email address to use for NCBI Entrez.')
+    parser.add_argument("-k", "--api_key", type=str, default=os.getenv("NCBI_API_KEY"),
+                        help="NCBI API key (defaults to the NCBI_API_KEY env var). "
+                             "Raises the rate limit from 3 to 10 requests/second.")
 
     group=parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-t", '--taxon_id', type=int, required=False, help='The taxon ID to start the search.')
@@ -100,6 +106,11 @@ def main():
     parser.add_argument("-v", "--odb_version", type=str, required=True, help="odb database version 10 or 12")
     
     args=parser.parse_args()
+
+    #set credentials once (module-global, so it applies to every Entrez call)
+    Entrez.email = args.email
+    if args.api_key:
+        Entrez.api_key = args.api_key
 
     #if by species
     if args.species_name:

@@ -13,9 +13,11 @@ def run_busco_plot(glob_pattern, output_path):
 
 BUSCO_FLAT_COLS = ["species", "src", "lineage_used", "lineage_completeness", "eukaryote_completeness"]
 
+# prediction files are named <species>_<taxid>_<source>.<ext>; the source (annotation
+# origin) is parsed from the name, so categories only need the directory + extension.
 CATEGORIES = {
-    "regular": {"pred_dir": "pred",    "pred_suffix": "_own.gff3"},
-    "merged":  {"pred_dir": "merged",  "pred_suffix": "_own.gff"},
+    "regular": {"pred_dir": "pred",    "pred_ext": ".gff3"},
+    "merged":  {"pred_dir": "merged",  "pred_ext": ".gff"},
 }
 
 # one consolidated row per species (same contract as the annotator family's
@@ -96,7 +98,21 @@ def genome_size_bp(species_root, sp):
 
 
 def write_counts(results_dir, summary_dir, name, cfg, species_root=None):
-    """Write per-species counts + derived metrics for one evaluation flavour into results/summary/<name>/: a counts/ folder with one consolidated <sp>_metrics.tsv per species, plus a counts_summary.tsv table (same columns) at the category root. Genome size is the total assembly length read from <species_root>/<sp>/CLEAN_*.fna; species_root defaults to <results_dir>/../training_data/species."""
+    """Write per-species counts + derived metrics for one evaluation flavour into
+    results/summary/<name>/: a counts/ folder with one consolidated <sp>_metrics.tsv
+    per species, plus a counts_summary.tsv table (same columns) at the category root.
+
+    Prediction files are named <species>_<source>.<ext> (source = annotation origin).
+    The per-species outputs keep one row per species (cross-project _metrics.tsv
+    contract); when a species has several sources the first (sorted) one is its
+    representative. Per-(species, source) counts are also collected for the local
+    summary. Genome size is the total assembly length read from
+    <species_root>/<sp>/CLEAN_*.fna; species_root defaults to
+    <results_dir>/../training_data/species.
+
+    Returns (rows, unit_rows): rows is the per-species list of metric lists;
+    unit_rows is a list of dicts {unit, sp, src, metrics}, one per prediction file.
+    """
     if species_root is None:
         species_root = os.path.join(os.path.dirname(os.path.abspath(results_dir)),
                                     "training_data", "species")
@@ -105,27 +121,34 @@ def write_counts(results_dir, summary_dir, name, cfg, species_root=None):
     os.makedirs(counts_out, exist_ok=True)
 
     pred_dir = os.path.join(results_dir, cfg["pred_dir"])
-    suffix = cfg["pred_suffix"]
+    ext = cfg["pred_ext"]
     rows = []
-    for gff in sorted(glob.glob(os.path.join(pred_dir, "*" + suffix))):
-        sp = os.path.basename(gff)[: -len(suffix)]  # <specie_name>_<taxid>
+    unit_rows = []
+    seen_sp = set()
+    for gff in sorted(glob.glob(os.path.join(pred_dir, "*" + ext))):
+        unit = os.path.basename(gff)[: -len(ext)]  # <specie_name>_<taxid>_<source>
+        sp, src = unit.rsplit("_", 1)
         genes, transcripts = count_models(gff)
         gsize = genome_size_bp(species_root, sp)
         gd, td, ipg = derived_metrics(genes, transcripts, gsize)
-        row = [sp, str(genes), str(transcripts),
-               "NA" if gsize is None else str(gsize),
-               "NA", "NA", gd, td, ipg, "NA"]
-        with open(os.path.join(counts_out, f"{sp}_metrics.tsv"), "w") as fh:
-            fh.write("\t".join(METRIC_HEADER) + "\n")
-            fh.write("\t".join(row) + "\n")
-        rows.append(row)
+        metrics = [sp, str(genes), str(transcripts),
+                   "NA" if gsize is None else str(gsize),
+                   "NA", "NA", gd, td, ipg, "NA"]
+        unit_rows.append({"unit": unit, "sp": sp, "src": src, "metrics": metrics})
+        # per-species outputs keep one row per species (representative = first source)
+        if sp not in seen_sp:
+            seen_sp.add(sp)
+            with open(os.path.join(counts_out, f"{sp}_metrics.tsv"), "w") as fh:
+                fh.write("\t".join(METRIC_HEADER) + "\n")
+                fh.write("\t".join(metrics) + "\n")
+            rows.append(metrics)
 
     with open(os.path.join(cat_out, "counts_summary.tsv"), "w") as fh:
         fh.write("\t".join(METRIC_HEADER) + "\n")
         for row in rows:
             fh.write("\t".join(row) + "\n")
-    print(f"[{name}] metrics: {len(rows)} species -> counts/ (+ counts_summary.tsv)")
-    return rows
+    print(f"[{name}] metrics: {len(rows)} species ({len(unit_rows)} units) -> counts/ (+ counts_summary.tsv)")
+    return rows, unit_rows
 
 
 def read_busco_json(path):
@@ -143,11 +166,12 @@ def collect_busco(cat_dir):
     """Read BUSCO JSONs from busco_lineage/ and busco_eukaryote/ under cat_dir.
 
     JSON names follow <species>_<taxonID>_<src>_Lbusco.json / _Ebusco.json where
-    <src> is 'own' or 'git' (the prediction source that was BUSCO-evaluated).
+    <src> is the annotation origin the parameters were trained on (e.g. 'reference',
+    'lyric', 'isoquant').
 
     Returns:
       flat_rows  : list of dicts keyed by BUSCO_FLAT_COLS, one per (species, src)
-      srcs_seen  : sorted list of unique src values found (e.g. ['git', 'own'])
+      srcs_seen  : sorted list of unique src values found (e.g. ['isoquant', 'reference'])
     """
     rows = {}
     for path in sorted(glob.glob(os.path.join(cat_dir, "busco_lineage", "*_Lbusco.json"))):
@@ -174,12 +198,12 @@ def write_busco_and_general(cat_dir, counts_rows):
 
     busco_summary.tsv  : flat table, one row per (species, src) pair.
     general_summary.tsv: one row per species; all counts columns followed by BUSCO
-                         columns pivoted by src (own_lineage_completeness, ...).
-                         A single lineage_used column is taken from 'own' if present,
-                         otherwise 'git'. For flavours without BUSCO (e.g. refined),
-                         only the counts columns are written.
+                         columns pivoted by src (reference_lineage_completeness, ...).
+                         lineage_used depends on the taxon, not the source, so the
+                         first src seen for a species fills it. For flavours without
+                         BUSCO (e.g. refined), only the counts columns are written.
 
-    counts_rows is the list of lists returned by write_counts.
+    counts_rows is the per-species list of metric lists returned by write_counts.
     """
     flat_rows, srcs_seen = collect_busco(cat_dir)
 
@@ -198,8 +222,8 @@ def write_busco_and_general(cat_dir, counts_rows):
         d = busco_by_sp.setdefault(sp, {})
         d[f"{src}_lineage_completeness"] = row.get("lineage_completeness", "NA")
         d[f"{src}_eukaryote_completeness"] = row.get("eukaryote_completeness", "NA")
-        # own takes precedence for lineage_used; fall back to git if own absent
-        if "lineage_used" not in d or src == "own":
+        # lineage_used depends on the taxon, not the source: first src seen fills it
+        if "lineage_used" not in d:
             d["lineage_used"] = row.get("lineage_used", "NA")
 
     busco_gcols = (
@@ -220,6 +244,35 @@ def write_busco_and_general(cat_dir, counts_rows):
             bco = [str(busco_by_sp.get(sp, {}).get(c, "NA")) for c in busco_gcols]
             fh.write("\t".join(cnt + bco) + "\n")
     print(f"  general: {len(all_species)} species -> general_summary.tsv")
+
+
+LOCAL_COLS = (["unit"] + BUSCO_FLAT_COLS[:1] + ["src"] + METRIC_HEADER[1:]
+              + ["lineage_used", "lineage_completeness", "eukaryote_completeness"])
+
+
+def write_local_summary(cat_dir, unit_rows):
+    """Write general_summary_local.tsv: a flat table with one row per (species, source)
+    unit, joining per-unit counts with that unit's BUSCO completeness.
+
+    This table is for local inspection only (per-source detail); it is NOT part of the
+    cross-project overall summary, which stays one row per species in general_summary.tsv.
+
+    unit_rows is the list of dicts returned by write_counts.
+    """
+    flat_rows, _ = collect_busco(cat_dir)
+    busco_by_unit = {(r["species"], r["src"]): r for r in flat_rows}
+
+    path = os.path.join(cat_dir, "general_summary_local.tsv")
+    with open(path, "w") as fh:
+        fh.write("\t".join(LOCAL_COLS) + "\n")
+        for u in unit_rows:
+            b = busco_by_unit.get((u["sp"], u["src"]), {})
+            row = ([u["unit"], u["sp"], u["src"]] + u["metrics"][1:]
+                   + [str(b.get("lineage_used", "NA")),
+                      str(b.get("lineage_completeness", "NA")),
+                      str(b.get("eukaryote_completeness", "NA"))])
+            fh.write("\t".join(row) + "\n")
+    print(f"  local  : {len(unit_rows)} units -> general_summary_local.tsv")
 
 
 def main():
@@ -250,7 +303,9 @@ def main():
 
     for name in CATEGORIES:
         cat_dir = os.path.join(summary_dir, name)
-        write_busco_and_general(cat_dir, counts[name])
+        rows, unit_rows = counts[name]
+        write_busco_and_general(cat_dir, rows)
+        write_local_summary(cat_dir, unit_rows)
 
     for name in CATEGORIES:
         for kind in ("busco_lineage", "busco_eukaryote"):

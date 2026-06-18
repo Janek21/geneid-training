@@ -1,4 +1,4 @@
-import os, glob, argparse, sys
+import os, glob, argparse, sys, json, re
 
 #Counts gene/transcript models and creates a summary table
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11,10 +11,11 @@ def run_busco_plot(glob_pattern, output_path):
     _busco_plot(glob_pattern, output_path)
 
 
+BUSCO_FLAT_COLS = ["species", "src", "lineage_used", "lineage_completeness", "eukaryote_completeness"]
+
 CATEGORIES = {
-    "regular": {"pred_dir": "pred",         "pred_suffix": "_own.gff3"},
-    "refined": {"pred_dir": "refined_pred", "pred_suffix": "_own.gff3"},
-    "merged":  {"pred_dir": "merged",       "pred_suffix": "_own.gff"},
+    "regular": {"pred_dir": "pred",    "pred_suffix": "_own.gff3"},
+    "merged":  {"pred_dir": "merged",  "pred_suffix": "_own.gff"},
 }
 
 # one consolidated row per species (same contract as the annotator family's
@@ -127,10 +128,104 @@ def write_counts(results_dir, summary_dir, name, cfg, species_root=None):
     return rows
 
 
+def read_busco_json(path):
+    """Return (lineage_name, completeness_float_or_None) from a BUSCO short_summary JSON."""
+    with open(path) as fh:
+        data = json.load(fh)
+    results = data.get("results", {})
+    m = re.search(r"C:\s*([\d.]+)%", results.get("one_line_summary", "") or "")
+    completeness = float(m.group(1)) if m else results.get("Complete percentage")
+    lineage = data.get("lineage_dataset", {}).get("name", "NA")
+    return lineage, completeness
+
+
+def collect_busco(cat_dir):
+    """Read BUSCO JSONs from busco_lineage/ and busco_eukaryote/ under cat_dir.
+
+    JSON names follow <species>_<taxonID>_<src>_Lbusco.json / _Ebusco.json where
+    <src> is 'own' or 'git' (the prediction source that was BUSCO-evaluated).
+
+    Returns:
+      flat_rows  : list of dicts keyed by BUSCO_FLAT_COLS, one per (species, src)
+      srcs_seen  : sorted list of unique src values found (e.g. ['git', 'own'])
+    """
+    rows = {}
+    for path in sorted(glob.glob(os.path.join(cat_dir, "busco_lineage", "*_Lbusco.json"))):
+        stem = os.path.basename(path)[: -len("_Lbusco.json")]
+        sp, src = stem.rsplit("_", 1)
+        lineage, completeness = read_busco_json(path)
+        rows.setdefault((sp, src), {}).update(
+            {"lineage_used": lineage, "lineage_completeness": completeness})
+    for path in sorted(glob.glob(os.path.join(cat_dir, "busco_eukaryote", "*_Ebusco.json"))):
+        stem = os.path.basename(path)[: -len("_Ebusco.json")]
+        sp, src = stem.rsplit("_", 1)
+        _, completeness = read_busco_json(path)
+        rows.setdefault((sp, src), {})["eukaryote_completeness"] = completeness
+    flat_rows = [
+        {"species": sp, "src": src, **v}
+        for (sp, src), v in sorted(rows.items())
+    ]
+    srcs_seen = sorted({src for (_, src) in rows})
+    return flat_rows, srcs_seen
+
+
+def write_busco_and_general(cat_dir, counts_rows):
+    """Write busco_summary.tsv and general_summary.tsv for one evaluation flavour.
+
+    busco_summary.tsv  : flat table, one row per (species, src) pair.
+    general_summary.tsv: one row per species; all counts columns followed by BUSCO
+                         columns pivoted by src (own_lineage_completeness, ...).
+                         A single lineage_used column is taken from 'own' if present,
+                         otherwise 'git'. For flavours without BUSCO (e.g. refined),
+                         only the counts columns are written.
+
+    counts_rows is the list of lists returned by write_counts.
+    """
+    flat_rows, srcs_seen = collect_busco(cat_dir)
+
+    # busco_summary.tsv: flat, one row per (species, src)
+    busco_path = os.path.join(cat_dir, "busco_summary.tsv")
+    with open(busco_path, "w") as fh:
+        fh.write("\t".join(BUSCO_FLAT_COLS) + "\n")
+        for row in flat_rows:
+            fh.write("\t".join(str(row.get(c, "NA")) for c in BUSCO_FLAT_COLS) + "\n")
+    print(f"  busco  : {len(flat_rows)} entries -> busco_summary.tsv")
+
+    # pivot BUSCO by src for general_summary
+    busco_by_sp = {}
+    for row in flat_rows:
+        sp, src = row["species"], row["src"]
+        d = busco_by_sp.setdefault(sp, {})
+        d[f"{src}_lineage_completeness"] = row.get("lineage_completeness", "NA")
+        d[f"{src}_eukaryote_completeness"] = row.get("eukaryote_completeness", "NA")
+        # own takes precedence for lineage_used; fall back to git if own absent
+        if "lineage_used" not in d or src == "own":
+            d["lineage_used"] = row.get("lineage_used", "NA")
+
+    busco_gcols = (
+        ["lineage_used"]
+        + [f"{src}_{m}" for src in srcs_seen
+           for m in ("lineage_completeness", "eukaryote_completeness")]
+    ) if srcs_seen else []
+
+    general_cols = METRIC_HEADER + busco_gcols
+    counts_by_sp = {r[0]: r for r in counts_rows}
+    all_species = sorted(set(counts_by_sp) | set(busco_by_sp))
+
+    general_path = os.path.join(cat_dir, "general_summary.tsv")
+    with open(general_path, "w") as fh:
+        fh.write("\t".join(general_cols) + "\n")
+        for sp in all_species:
+            cnt = list(counts_by_sp.get(sp, [sp] + ["NA"] * (len(METRIC_HEADER) - 1)))
+            bco = [str(busco_by_sp.get(sp, {}).get(c, "NA")) for c in busco_gcols]
+            fh.write("\t".join(cnt + bco) + "\n")
+    print(f"  general: {len(all_species)} species -> general_summary.tsv")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Write gene/transcript model counts and genome size for each "
-        "evaluation flavour (regular, refined, merged) into results/summary/<flavour>/."
+        "evaluation flavour (regular, merged) into results/summary/<flavour>/."
     )
     repo_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     default_results = os.path.join(repo_root, "results")
@@ -147,14 +242,17 @@ def main():
     summary_dir = os.path.join(results_dir, "summary")
     os.makedirs(summary_dir, exist_ok=True)
 
+    counts = {}
     for name, cfg in CATEGORIES.items():
-        write_counts(results_dir, summary_dir, name, cfg, species_root)
+        counts[name] = write_counts(results_dir, summary_dir, name, cfg, species_root)
 
     print(f"\nDone. Counts written under {summary_dir}")
 
-    # Two BUSCO runs per species (taxon lineage + eukaryota_odb12) land in
-    # separate folders; plot each independently (mirrors the isoquant evaluation).
-    for name in ("regular", "merged"):
+    for name in CATEGORIES:
+        cat_dir = os.path.join(summary_dir, name)
+        write_busco_and_general(cat_dir, counts[name])
+
+    for name in CATEGORIES:
         for kind in ("busco_lineage", "busco_eukaryote"):
             busco_dir = os.path.join(summary_dir, name, kind)
             run_busco_plot(os.path.join(busco_dir, "*.json"),

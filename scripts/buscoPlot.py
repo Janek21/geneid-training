@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 
-def run(input_pattern, out=None):
+def run(input_pattern, out=None, horizontal=False):
     files = sorted(glob.glob(input_pattern))
 
     if not files:
@@ -40,7 +40,6 @@ def run(input_pattern, out=None):
         print(f"No valid BUSCO JSON files found matching: {input_pattern}")
         return
 
-    fig, ax = plt.subplots(figsize=(12, 0.5 * len(results) + 2))
     colors = ["#56b4e9", "#0072b2", "#f0e442", "#f04442"]
     legend_labels = [
         "Complete (C) and single-copy (S)",
@@ -49,28 +48,57 @@ def run(input_pattern, out=None):
         "Missing (M)"
     ]
 
-    for i, (sp, v) in enumerate(results.items()):
-        vals = [v["C_S"], v["C_D"], v["F"], v["M"]]
-        left = 0
-        for val, col in zip(vals, colors):
-            ax.barh(i, val, left=left, color=col, height=0.6)
-            left += val
+    if horizontal:
+        # species along the x-axis, vertical stacked bars (figure grows wide)
+        fig, ax = plt.subplots(figsize=(0.5 * len(results) + 2, 8))
+        for i, (sp, v) in enumerate(results.items()):
+            vals = [v["C_S"], v["C_D"], v["F"], v["M"]]
+            bottom = 0
+            for val, col in zip(vals, colors):
+                ax.bar(i, val, bottom=bottom, color=col, width=0.6)
+                bottom += val
 
-        score_text = (
-            f"C:{round(v['C_S'] + v['C_D'], 2)}[S:{v['C_S']},D:{v['C_D']}],"
-            f"F:{v['F']},M:{v['M']},n:{v['total']}"
-        )
-        ax.text(0.5, i, score_text, va="center", ha="left", fontsize=7,
-                color="black", fontweight="bold")
+            score_text = (
+                f"C:{round(v['C_S'] + v['C_D'], 2)}[S:{v['C_S']},D:{v['C_D']}],"
+                f"F:{v['F']},M:{v['M']},n:{v['total']}"
+            )
+            ax.text(i, 2, score_text, va="bottom", ha="center", fontsize=6,
+                    rotation=90, color="black", fontweight="bold")
 
-    for x in range(0, 101, 20):
-        ax.axvline(x, color="gray", linewidth=0.8, linestyle="--", zorder=3)
+        for y in range(0, 101, 20):
+            ax.axhline(y, color="gray", linewidth=0.8, linestyle="--", zorder=3)
 
-    ax.set_yticks(range(len(results)))
-    ax.set_yticklabels(list(results.keys()), fontsize=8)
-    ax.set_xlabel("% BUSCOs")
-    ax.set_xlim(0, 100)
-    ax.set_ylim(-0.5, len(results) - 0.5)
+        ax.set_xticks(range(len(results)))
+        ax.set_xticklabels(list(results.keys()), fontsize=8,
+                           rotation=90, ha="center")
+        ax.set_ylabel("% BUSCOs")
+        ax.set_ylim(0, 100)
+        ax.set_xlim(-0.5, len(results) - 0.5)
+    else:
+        fig, ax = plt.subplots(figsize=(12, 0.5 * len(results) + 2))
+        for i, (sp, v) in enumerate(results.items()):
+            vals = [v["C_S"], v["C_D"], v["F"], v["M"]]
+            left = 0
+            for val, col in zip(vals, colors):
+                ax.barh(i, val, left=left, color=col, height=0.6)
+                left += val
+
+            score_text = (
+                f"C:{round(v['C_S'] + v['C_D'], 2)}[S:{v['C_S']},D:{v['C_D']}],"
+                f"F:{v['F']},M:{v['M']},n:{v['total']}"
+            )
+            ax.text(0.5, i, score_text, va="center", ha="left", fontsize=7,
+                    color="black", fontweight="bold")
+
+        for x in range(0, 101, 20):
+            ax.axvline(x, color="gray", linewidth=0.8, linestyle="--", zorder=3)
+
+        ax.set_yticks(range(len(results)))
+        ax.set_yticklabels(list(results.keys()), fontsize=8)
+        ax.set_xlabel("% BUSCOs")
+        ax.set_xlim(0, 100)
+        ax.set_ylim(-0.5, len(results) - 0.5)
+
     ax.set_title("BUSCO Assessment Results", fontsize=12, pad=10)
 
     ax.legend(
@@ -89,5 +117,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a combined BUSCO summary plot.")
     parser.add_argument("-i", "--input", required=True, help="Glob pattern to BUSCO JSON files (e.g. /path/to/folder/*.json)")
     parser.add_argument("-o", "--out", default=None, help="Output PNG file (default: busco_summary.png in the input folder)")
+    parser.add_argument("-H", "--horizontal", action="store_true", help="Lay species along the x-axis with vertical stacked bars (figure grows wide)")
     args = parser.parse_args()
-    run(args.input, args.out)
+    run(args.input, args.out, args.horizontal)

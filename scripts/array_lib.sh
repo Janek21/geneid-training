@@ -19,7 +19,7 @@
 run_array() {
     set -euo pipefail
     local cmd_file="$1" block_re="$2"
-    local throttle="${THROTTLE-}"
+    local throttle="${THROTTLE:-}"
 
     [ -f "$cmd_file" ] || { echo "Command file not found: $cmd_file" >&2; exit 1; }
 

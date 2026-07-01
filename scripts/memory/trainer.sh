@@ -9,6 +9,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 
+trainFile="${1:-total_training.txt}"
 # geneid training, one array task per species. Command file from notebook 1.
 source ../scripts/array_lib.sh
-run_array total_training.txt '^echo "Specie:'
+run_array  '^echo "Specie:'
